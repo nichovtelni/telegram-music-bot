@@ -5,6 +5,7 @@ const token = process.env.TELEGRAM_BOT_TOKEN;
 const telegramApi = token ? `https://api.telegram.org/bot${token}` : null;
 const subscribers = new Set();
 const trackCache = new Map();
+let nextTrackKey = 0;
 let polling = true;
 let lastTelegramError = null;
 let knownReleaseIds = new Set();
@@ -52,10 +53,11 @@ async function sendMessage(chatId, text, extra = {}) {
 function keyboard(tracks) {
   return {
     inline_keyboard: tracks.slice(0, 8).map((track) => {
-      trackCache.set(track.id, track);
+      const buttonKey = `t${nextTrackKey++}`;
+      trackCache.set(buttonKey, track);
       return [{
         text: `${track.previewUrl ? "▶ " : "↗ "}${short(track.title)} — ${short(track.artist, 24)}`,
-        callback_data: `track:${track.id}`.slice(0, 64),
+        callback_data: `track:${buttonKey}`,
       }];
     }),
   };
@@ -150,7 +152,7 @@ async function searchTracks(query) {
     searchYouTube(query),
   ]);
   const seen = new Set();
-  return values
+  const unique = values
     .filter((result) => result.status === "fulfilled")
     .flatMap((result) => result.value)
     .filter((track) => {
@@ -159,6 +161,16 @@ async function searchTracks(query) {
       seen.add(key);
       return true;
     });
+  unique.push({
+    id: `yandex:search:${encodeURIComponent(query)}`,
+    title: `Найти «${query}»`,
+    artist: "Яндекс Музыка",
+    album: "Поиск в каталоге",
+    sourceUrl: `https://music.yandex.ru/search?text=${encodeURIComponent(query)}`,
+    provider: "Яндекс Музыка",
+    rightsNote: "Открыть официальный поиск в Яндекс Музыке",
+  });
+  return unique;
 }
 
 async function newReleases() {
@@ -360,6 +372,7 @@ const server = createServer(async (request, response) => {
         providers: {
           spotify: Boolean(process.env.SPOTIFY_CLIENT_ID && process.env.SPOTIFY_CLIENT_SECRET),
           youtube: Boolean(process.env.YOUTUBE_API_KEY),
+          yandexSearchLink: true,
           appleMusicPreview: true,
         },
       },
